@@ -1,8 +1,11 @@
+# IDE
 .idea/
 .vscode/
 .DS_Store
 
+# Cache
 __pycache__
+*.py[cod]
 
 *.mp4
 *.avi
@@ -15,5 +18,8 @@ __pycache__
 *.trt
 *.engine
 *.plan
+
+# TensorFlow event files
+events.out.tfevents.*
 
 !letters.png
