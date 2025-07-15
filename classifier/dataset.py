@@ -2,6 +2,7 @@ import random
 from collections import defaultdict
 from typing import cast, Iterable
 
+import numpy as np
 import torch
 from PIL import Image
 from torch.utils.data import Dataset, Subset
@@ -94,7 +95,7 @@ class InferenceDataset(Dataset):
         return image, image_path
 
 
-def transform() -> transforms.Compose:
+def create_transform() -> transforms.Compose:
     """Creates transformations for image transforms.
 
     Returns:
@@ -105,3 +106,17 @@ def transform() -> transforms.Compose:
         transforms.ToTensor(),
         transforms.Normalize(mean=[0.5] * 3, std=[0.5] * 3)
     ])
+
+
+def set_seed(seed: int) -> None:
+    """Sets random seed for reproducibility across random, numpy and torch.
+
+    Args:
+        seed (int): Random seed.
+    """
+    random.seed(seed)
+    np.random.seed(seed)
+    torch.manual_seed(seed)
+    torch.cuda.manual_seed_all(seed)
+    torch.backends.cudnn.deterministic = True
+    torch.backends.cudnn.benchmark = False

@@ -1,9 +1,7 @@
 import argparse
 import os
-import random
 from datetime import datetime
 
-import numpy as np
 import torch
 import torch.nn.functional as F
 from torch.utils.data import DataLoader
@@ -11,23 +9,9 @@ from torch.utils.tensorboard import SummaryWriter
 from torchvision.datasets import ImageFolder
 
 from classifier.classifier import ViTFeatureExtractor, compute_prototypes
-from classifier.dataset import FewShotDataset, transform
+from classifier.dataset import FewShotDataset, create_transform, set_seed
 
 DEVICE = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-
-
-def set_seed(seed: int) -> None:
-    """Sets random seed for reproducibility across random, numpy and torch.
-
-    Args:
-        seed (int): Random seed.
-    """
-    random.seed(seed)
-    np.random.seed(seed)
-    torch.manual_seed(seed)
-    torch.cuda.manual_seed_all(seed)
-    torch.backends.cudnn.deterministic = True
-    torch.backends.cudnn.benchmark = False
 
 
 def run_episode(
@@ -143,7 +127,7 @@ def main():
     model_path = os.path.join(args.output_dir, f"fewshot_protonet_{timestamp}.pth")
     log_dir = os.path.join(args.output_dir, "logs", timestamp)
 
-    dataset = ImageFolder(args.dataset_path, transform=transform())
+    dataset = ImageFolder(args.dataset_path, transform=create_transform())
     fs_dataset = FewShotDataset(dataset)
 
     print(f"📁 Loaded {len(dataset)} images from {len(dataset.classes)} classes.")
