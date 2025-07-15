@@ -92,3 +92,16 @@ class InferenceDataset(Dataset):
         image = self.transform(image)
 
         return image, image_path
+
+
+def transform() -> transforms.Compose:
+    """Creates transformations for image transforms.
+
+    Returns:
+        transforms.Compose: Transformations for ViT model
+    """
+    return transforms.Compose([
+        transforms.Resize((224, 224)),
+        transforms.ToTensor(),
+        transforms.Normalize(mean=[0.5] * 3, std=[0.5] * 3)
+    ])

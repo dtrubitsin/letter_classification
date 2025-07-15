@@ -27,7 +27,7 @@ class ViTFeatureExtractor(nn.Module):
         Returns:
             torch.Tensor: Extracted features of shape [B, D].
         """
-        return self.vit(x).mean(dim=1)  # Average pooling over patch tokens
+        return self.vit(x)
 
 
 def compute_prototypes(
