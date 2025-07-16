@@ -5,3 +5,7 @@ torch
 torchvision
 timm
 tensorboard
+uvicorn
+python-multipart
+fastapi
+pydantic
