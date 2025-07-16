@@ -6,7 +6,6 @@ import numpy as np
 
 # --- CONFIG ---
 BBOX_SCALE = 1.1
-SAVE_DIR = "data/dataset"
 
 
 @dataclass
@@ -104,23 +103,28 @@ class Detector:
             cv2.rectangle(img_out, pt1, pt2, (0, 255, 0), 4)
         return img_out
 
-    def save_letters(self, img: np.ndarray) -> None:
+    def save_letters(self, img: np.ndarray, save_dir: str) -> None:
         """
         Extracts and saves cropped letter regions to disk.
 
         Args:
             img (np.ndarray): Original image with letters.
+            save_dir (str): Directory to save cropped letter images.
         """
-        os.makedirs(SAVE_DIR, exist_ok=True)
+        os.makedirs(save_dir, exist_ok=True)
 
         bboxes = self.predict(img)
         scaled_bboxes = self.scale_bboxes(img, bboxes)
 
+        print(f"Saving {len(bboxes)} bounding boxes to {save_dir}")
+
         for idx, bbox in enumerate(scaled_bboxes):
             x, y, w, h = bbox.x, bbox.y, bbox.width, bbox.height
             crop = img[y:y + h, x:x + w]
-            save_path = os.path.join(SAVE_DIR, f"{idx}.jpg")
+            save_path = os.path.join(save_dir, f"{idx}.jpg")
             cv2.imwrite(save_path, crop)
+
+        print("Successfully saved cropped letter regions to disk.")
 
     @staticmethod
     def scale_bboxes(img: np.ndarray, bboxes: list[BBox]) -> list[BBox]:
