@@ -2,6 +2,7 @@ import argparse
 import json
 from pathlib import Path
 
+import numpy as np
 import torch
 import torch.nn.functional as F
 from torch.utils.data import DataLoader
@@ -15,13 +16,13 @@ DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 
 def load_model(model_path: str) -> ViTFeatureExtractor:
-    """Loads a trained few-shot model from the given path.
+    """Load a trained few-shot classification model.
 
     Args:
-        model_path (str): Path to the model checkpoint.
+        model_path (str): Path to the saved model weights (.pth file).
 
     Returns:
-        ViTFeatureExtractor: Loaded and ready model.
+        ViTFeatureExtractor: The model loaded with trained weights in evaluation mode.
     """
     model = ViTFeatureExtractor().to(DEVICE)
     model.load_state_dict(torch.load(model_path, map_location=DEVICE))
@@ -30,13 +31,13 @@ def load_model(model_path: str) -> ViTFeatureExtractor:
 
 
 def collate_fn(batch: list) -> tuple[torch.Tensor, list]:
-    """Custom collate function for batching image and path pairs.
+    """Custom collate function for DataLoader.
 
     Args:
-        batch: List of (image, path) pairs.
+        batch (list): A batch of tuples containing image tensors and file paths.
 
     Returns:
-        Tuple of batched images and list of corresponding paths.
+        tuple: A tuple containing a stacked tensor of images and a list of image paths.
     """
     images = torch.stack([item[0] for item in batch])
     paths = [item[1] for item in batch]
@@ -52,7 +53,7 @@ def create_support_set(fs_dataset: FewShotDataset, n_way: int = 4, k_shot: int =
         k_shot (int): Number of support examples per class.
 
     Returns:
-        tuple: (support_images, support_labels, class_names)
+        tuple: A tuple of support images, their corresponding episode labels, and class names.
     """
     # Sample an episode to get support set
     support_set, _, selected_classes = fs_dataset.sample_episode(n_way, k_shot, q_query=0)
@@ -74,18 +75,19 @@ def create_support_set(fs_dataset: FewShotDataset, n_way: int = 4, k_shot: int =
     return support_images, episode_labels, class_names
 
 
-def run_inference(model, support_images, support_labels, class_names, query_images):
-    """Run inference on query images using prototypical networks.
+def run_inference(model: ViTFeatureExtractor, support_images: torch.Tensor, support_labels: torch.Tensor,
+                  class_names: list[str], query_images: torch.Tensor) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    """Run few-shot classification on a batch of query images.
 
     Args:
-        model: Trained ViTFeatureExtractor model.
-        support_images: Support set images tensor.
-        support_labels: Support set labels tensor.
-        class_names: List of class names.
-        query_images: Query images tensor.
+        model (ViTFeatureExtractor): The trained few-shot classifier.
+        support_images (torch.Tensor): Tensor of support set images.
+        support_labels (torch.Tensor): Labels of support set images mapped to episode indices.
+        class_names (list[str]): Human-readable class names corresponding to episode indices.
+        query_images (torch.Tensor): Tensor of query images to classify.
 
     Returns:
-        tuple: (predictions, max_confidences, all_confidences)
+        tuple: Predicted class indices, confidence scores for top predictions, and full softmax confidence distributions.
     """
     model.eval()
 
@@ -114,13 +116,13 @@ def run_inference(model, support_images, support_labels, class_names, query_imag
 
 
 def get_image_paths(folder_path: str) -> list[str]:
-    """Get all image paths from a folder.
+    """Collect all valid image file paths from a folder.
 
     Args:
-        folder_path: Path to folder containing images.
+        folder_path (str): Path to the folder containing images.
 
     Returns:
-        list: Sorted list of image paths.
+        list[str]: Sorted list of image file paths.
     """
     image_extensions = {".jpg", ".jpeg", ".png", ".bmp", ".tiff", ".webp"}
     image_paths = []
@@ -133,7 +135,15 @@ def get_image_paths(folder_path: str) -> list[str]:
     return sorted(image_paths)
 
 
-def prepare_data(args: argparse.Namespace) -> tuple:
+def prepare_data(args: argparse.Namespace) -> tuple[torch.Tensor, torch.Tensor, list[str], DataLoader]:
+    """Load support and query sets and prepare them for inference.
+
+    Args:
+        args (argparse.Namespace): Parsed command-line arguments containing paths and settings.
+
+    Returns:
+        tuple: Support images, support labels, class names, and a DataLoader for query images.
+    """
     print(f"Creating support set from {args.support_data}")
 
     # Create base dataset for support set
@@ -246,8 +256,6 @@ def main():
     print(f"\nClass distribution:")
     for class_name, count in class_counts.items():
         print(f"  {class_name}: {count}")
-
-    print(f"\nEpisode classes used: {class_names}")
 
 
 if __name__ == "__main__":
