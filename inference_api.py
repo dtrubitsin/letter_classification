@@ -1,17 +1,13 @@
 import io
-from enum import nonmember
-from typing import Dict
 import logging
 from pathlib import Path
-from contextlib import asynccontextmanager
-from torchvision import transforms
+
 import numpy as np
 import torch
 from PIL import Image
 from fastapi import FastAPI, UploadFile, File, HTTPException, status
-from fastapi.responses import JSONResponse
-from torchvision.datasets import ImageFolder
 from pydantic import BaseModel, Field
+from torchvision.datasets import ImageFolder
 
 from classifier.classifier import compute_prototypes
 from classifier.dataset import FewShotDataset, create_transform
@@ -22,8 +18,20 @@ from test import load_model, create_support_set
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
+
 # --- CONFIG ---
 class Config:
+    """Configuration class for the application.
+
+    Attributes:
+        MODEL_PATH (str): Path to the trained few-shot model checkpoint.
+        SUPPORT_PATH (str): Path to the support set dataset.
+        K_SHOT (int): Number of examples per class in the support set.
+        N_WAY (int): Number of classes in the support set.
+        DEVICE (torch.device): Device to run the model on (CUDA if available).
+        MAX_FILE_SIZE (int): Maximum allowed file size for uploaded images (14MB).
+        ALLOWED_EXTENSIONS (set): Set of allowed image file extensions.
+    """
     MODEL_PATH = "checkpoints/fewshot_protonet_20250715-203358.pth"
     SUPPORT_PATH = "data/dataset"
     K_SHOT = 3
@@ -32,26 +40,44 @@ class Config:
     MAX_FILE_SIZE = 14 * 1024 * 1024  # 14MB
     ALLOWED_EXTENSIONS = {".jpg", ".jpeg", ".png", ".bmp", ".gif"}
 
+
 # --- Response Models ---
 class PredictionResponse(BaseModel):
-    letter_counts: Dict[str, int] = Field(..., description="Count of detected letters")
+    """Response model for successful predictions.
+
+    Attributes:
+        letter_counts (dict[str, int]): Count of detected letters by class.
+        total_detections (int): Total number of detections.
+        processing_time_ms (float): Processing time in milliseconds.
+    """
+    letter_counts: dict[str, int] = Field(..., description="Count of detected letters")
     total_detections: int = Field(..., description="Total number of detections")
     processing_time_ms: float = Field(..., description="Processing time in milliseconds")
 
+
 class ErrorResponse(BaseModel):
+    """Error response model.
+
+    Attributes:
+        error (str): Error message.
+        detail (str | None): Additional error details.
+    """
     error: str = Field(..., description="Error message")
     detail: str | None = Field(None, description="Additional error details")
 
 
-# --- Global Variables ---
-model: torch.nn.Module | None = None
-prototypes: torch.Tensor | None = None
-support_class_names: list[str] | None = None
-detector: Detector | None = None
-transform: transforms.Compose | None = None
-
 def load_image_from_bytes(img_bytes: bytes) -> np.ndarray:
-    """Load and convert image from bytes to numpy array."""
+    """Load and convert image from bytes to numpy array.
+
+    Args:
+        img_bytes: Image data in bytes.
+
+    Returns:
+        Numpy array representing the image.
+
+    Raises:
+        HTTPException: If the image cannot be loaded.
+    """
     try:
         img = Image.open(io.BytesIO(img_bytes)).convert("RGB")
         return np.array(img)
@@ -63,7 +89,17 @@ def load_image_from_bytes(img_bytes: bytes) -> np.ndarray:
 
 
 def classify_crop(crop: np.ndarray) -> str:
-    """Classify a single letter crop."""
+    """Classify a single letter crop.
+
+    Args:
+        crop: Numpy array representing the cropped letter image.
+
+    Returns:
+        Predicted class name for the letter.
+
+    Note:
+        Returns "unknown" if classification fails.
+    """
     try:
         pil_crop = Image.fromarray(crop)
         input_tensor = transform(pil_crop).unsqueeze(0).to(Config.DEVICE)
@@ -81,7 +117,14 @@ def classify_crop(crop: np.ndarray) -> str:
 
 
 def validate_file(file: UploadFile) -> None:
-    """Validate uploaded file."""
+    """Validate uploaded file.
+
+    Args:
+        file: Uploaded file to validate.
+
+    Raises:
+        HTTPException: If the file is invalid (missing filename or wrong extension).
+    """
     if not file.filename:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -95,8 +138,20 @@ def validate_file(file: UploadFile) -> None:
             detail=f"Unsupported file type. Allowed: {', '.join(Config.ALLOWED_EXTENSIONS)}"
         )
 
+
 def initialize_model() -> tuple[torch.nn.Module, torch.Tensor, list[str]]:
-    """Initialize model, prototypes, and class names."""
+    """Initialize model, prototypes, and class names.
+
+    Returns:
+        Tuple containing:
+            - Initialized model
+            - Class prototypes
+            - List of class names
+
+    Raises:
+        FileNotFoundError: If model or support dataset paths are invalid.
+        Exception: If any error occurs during model initialization.
+    """
     try:
         # Validate paths
         if not Path(Config.MODEL_PATH).exists():
@@ -137,53 +192,43 @@ def initialize_model() -> tuple[torch.nn.Module, torch.Tensor, list[str]]:
         raise
 
 
-@asynccontextmanager
-async def lifespan(app: FastAPI):
-    """Manage application lifespan."""
-    global model, prototypes, support_class_names, detector, transform
-
-    try:
-        # Startup
-        logger.info("Starting up application...")
-        model, prototypes, support_class_names = initialize_model()
-        detector = Detector()
-        transform = create_transform()
-        logger.info("Application startup complete")
-
-        yield
-
-    except Exception as e:
-        logger.error(f"Startup failed: {str(e)}")
-        raise
-    finally:
-        # Cleanup
-        logger.info("Shutting down application...")
-        # Add any cleanup code here if needed
-
 # --- Init app ---
 app = FastAPI(
     title="Letter Detection API",
     description="API for detecting and classifying letters in images",
-    version="1.0.0",
-    lifespan=lifespan
+    version="1.0.0"
 )
+
+model, prototypes, support_class_names = initialize_model()
+detector = Detector()
+transform = create_transform()
+
 
 @app.get("/health")
 async def health_check():
-    """Health check endpoint."""
+    """Health check endpoint.
+
+    Returns:
+        Dictionary with service status and device information.
+    """
     return {"status": "healthy", "device": str(Config.DEVICE)}
 
 
 @app.post("/predict", response_model=PredictionResponse)
 async def predict(file: UploadFile = File(...)) -> PredictionResponse:
-    """
-    Predict letters in an uploaded image.
+    """Predict letters in an uploaded image.
 
     Args:
-        file: Uploaded image file
+        file: Uploaded image file to process.
 
     Returns:
-        PredictionResponse with letter counts and processing time
+        PredictionResponse with letter counts and processing information.
+
+    Raises:
+        HTTPException: For various error conditions including:
+            - Invalid file type or size
+            - Image processing errors
+            - Internal server errors
     """
     import time
     start_time = time.time()
@@ -209,7 +254,7 @@ async def predict(file: UploadFile = File(...)) -> PredictionResponse:
         bboxes = detector.predict(img_np)
         scaled_bboxes = detector.scale_bboxes(img_np, bboxes)
 
-        letter_counts: Dict[str, int] = {}
+        letter_counts: dict[str, int] = {}
 
         # Process each detected bounding box
         for bbox in scaled_bboxes:
@@ -251,6 +296,8 @@ async def predict(file: UploadFile = File(...)) -> PredictionResponse:
             detail="Internal server error during prediction"
         )
 
+
 if __name__ == "__main__":
     import uvicorn
+
     uvicorn.run(app, host="127.0.0.1", port=8000)
